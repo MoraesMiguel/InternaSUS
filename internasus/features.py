@@ -4,7 +4,7 @@ from loguru import logger
 from tqdm import tqdm
 import typer
 
-from internasus.config import PROCESSED_DATA_DIR
+from internasus.config import GOLD_DATA_DIR
 
 app = typer.Typer()
 
@@ -12,8 +12,8 @@ app = typer.Typer()
 @app.command()
 def main(
     # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
-    input_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "features.csv",
+    input_path: Path = GOLD_DATA_DIR / "dataset.csv",
+    output_path: Path = GOLD_DATA_DIR / "features.csv",
     # -----------------------------------------
 ):
     # ---- REPLACE THIS WITH YOUR OWN CODE ----

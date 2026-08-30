@@ -54,7 +54,7 @@ addopts = "-m 'not integration'"
 [tool.ruff]
 line-length = 99
 src = ["internasus"]
-include = ["pyproject.toml", "internasus/**/*.py"]
+include = ["pyproject.toml", "internasus/**/*.py", "dashboard/**/*.py"]
 
 [tool.ruff.lint]
 extend-select = ["I"]  # Add import sorting

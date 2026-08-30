@@ -19,8 +19,8 @@ os.environ.setdefault("PYSUS_CACHEPATH", str(PROJ_ROOT / ".pysus_cache"))
 
 DATA_DIR = PROJ_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
-INTERIM_DATA_DIR = DATA_DIR / "interim"
-PROCESSED_DATA_DIR = DATA_DIR / "processed"
+SILVER_DATA_DIR = DATA_DIR / "silver"
+GOLD_DATA_DIR = DATA_DIR / "gold"
 EXTERNAL_DATA_DIR = DATA_DIR / "external"
 
 MODELS_DIR = PROJ_ROOT / "models"

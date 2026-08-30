@@ -2,10 +2,20 @@
 internasus.oci_storage
 Upload dos parquets locais (data/raw, data/silver, data/gold) para os
 buckets correspondentes no OCI Object Storage.
+
+Uso via CLI (requer ~/.oci/config já configurado):
+    python -m internasus.oci_storage publish-raw
+    python -m internasus.oci_storage publish-silver
+    python -m internasus.oci_storage publish-gold
+    python -m internasus.oci_storage publish-all
 """
 
 from pathlib import Path
+
 import oci
+import typer
+
+from internasus.config import GOLD_DATA_DIR, RAW_DATA_DIR, SILVER_DATA_DIR
 
 # Nome dos buckets criados no Console OCI
 BUCKET_BRONZE = "datasus-raw"
@@ -14,6 +24,8 @@ BUCKET_GOLD = "datasus-gold"
 
 # Região onde os buckets foram criados (Brazil East - São Paulo)
 REGION = "sa-saopaulo-1"
+
+app = typer.Typer()
 
 
 def _get_client() -> tuple[oci.object_storage.ObjectStorageClient, str]:
@@ -70,11 +82,15 @@ def upload_pasta(pasta_local: Path, bucket: str, prefixo: str = "") -> None:
         print(f"[upload_pasta] Nenhum .parquet encontrado em {pasta_local}")
         return
 
-    print(f"[upload_pasta] Enviando {len(arquivos)} arquivo(s) de {pasta_local} para bucket '{bucket}'...")
+    print(
+        f"[upload_pasta] Enviando {len(arquivos)} arquivo(s) de {pasta_local} para bucket '{bucket}'..."
+    )
 
     for i, arquivo in enumerate(arquivos, start=1):
         caminho_relativo = arquivo.relative_to(pasta_local)
-        nome_objeto = f"{prefixo}{caminho_relativo.as_posix()}" if prefixo else caminho_relativo.as_posix()
+        nome_objeto = (
+            f"{prefixo}{caminho_relativo.as_posix()}" if prefixo else caminho_relativo.as_posix()
+        )
 
         with open(arquivo, "rb") as f:
             client.put_object(
@@ -88,7 +104,31 @@ def upload_pasta(pasta_local: Path, bucket: str, prefixo: str = "") -> None:
     print("[upload_pasta] Concluído.")
 
 
+@app.command("publish-raw")
+def publish_raw() -> None:
+    """Envia data/raw/ (camada Bronze) para o bucket datasus-raw."""
+    upload_pasta(RAW_DATA_DIR, BUCKET_BRONZE)
+
+
+@app.command("publish-silver")
+def publish_silver() -> None:
+    """Envia data/silver/ para o bucket datasus-silver."""
+    upload_pasta(SILVER_DATA_DIR, BUCKET_SILVER)
+
+
+@app.command("publish-gold")
+def publish_gold() -> None:
+    """Envia data/gold/ para o bucket datasus-gold."""
+    upload_pasta(GOLD_DATA_DIR, BUCKET_GOLD)
+
+
+@app.command("publish-all")
+def publish_all() -> None:
+    """Envia data/raw/, data/silver/ e data/gold/ para os respectivos buckets, em sequência."""
+    publish_raw()
+    publish_silver()
+    publish_gold()
+
+
 if __name__ == "__main__":
-    # Exemplo de uso: envia tudo que está em data/raw para o bucket bronze
-    PROJ_ROOT = Path(__file__).resolve().parent.parent
-    upload_pasta(PROJ_ROOT / "data" / "raw", BUCKET_BRONZE)
+    app()
