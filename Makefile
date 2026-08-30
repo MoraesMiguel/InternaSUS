@@ -83,6 +83,41 @@ ingest-sih:
 ingest-sidra:
 	$(PYTHON_INTERPRETER) -m internasus.dataset ingest-sidra
 
+## Gera a camada Silver a partir de data/raw/
+.PHONY: silver
+silver:
+	$(PYTHON_INTERPRETER) -m internasus.processing.silver
+
+## Gera a camada Gold (star schema) a partir de data/silver/
+.PHONY: gold
+gold:
+	$(PYTHON_INTERPRETER) -m internasus.processing.gold
+
+## Envia data/raw/ para o bucket Bronze no OCI
+.PHONY: publish-raw
+publish-raw:
+	$(PYTHON_INTERPRETER) -m internasus.oci_storage publish-raw
+
+## Envia data/silver/ para o bucket Silver no OCI
+.PHONY: publish-silver
+publish-silver:
+	$(PYTHON_INTERPRETER) -m internasus.oci_storage publish-silver
+
+## Envia data/gold/ para o bucket Gold no OCI
+.PHONY: publish-gold
+publish-gold:
+	$(PYTHON_INTERPRETER) -m internasus.oci_storage publish-gold
+
+## Envia data/raw/, data/silver/ e data/gold/ para os respectivos buckets no OCI
+.PHONY: publish-all
+publish-all:
+	$(PYTHON_INTERPRETER) -m internasus.oci_storage publish-all
+
+## Roda o dashboard Streamlit localmente (le data/gold/ local)
+.PHONY: dashboard
+dashboard:
+	streamlit run dashboard/Home.py
+
 ## Roda a suite de testes unitarios (rapida, sem rede)
 .PHONY: test
 test:

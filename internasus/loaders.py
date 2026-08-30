@@ -4,15 +4,20 @@ Conexão DuckDB que expõe os parquets ingeridos em data/raw/ como views SQL.
 """
 
 from pathlib import Path
+
 import duckdb
 
 PROJ_ROOT = Path(__file__).resolve().parent.parent
 DATA_RAW = PROJ_ROOT / "data" / "raw"
 
-# Confirmados a partir da estrutura real de data/raw:
+# Confirmado a partir da estrutura real de data/raw (ver internasus/ingestion/paths.py):
 #   fonte=CNES/uf=SP/ano=YYYY/mes=MM/dataset={EQ,LT,PF,SR,ST}/*.parquet
 #   fonte=SIA/uf=SP/ano=YYYY/mes=MM/dataset=PA/*.parquet
-# Ainda não confirmados (SIH/SIDRA não baixados ainda) — ajuste quando existirem:
+#   fonte=SIH/uf=SP/ano=YYYY/mes=MM/dataset=RD/*.parquet
+#   fonte=IBGE_SIDRA/uf=SP/ano=YYYY/dataset=<tabela>/*.parquet
+#
+# Nome de cada view = nome da tabela usado nas queries SQL do notebook
+# (ex.: "ibge_pop", não "sidra" — conferir notebooks/InternaSUS.ipynb).
 VIEWS = {
     "cnes_eq": "fonte=CNES/uf=SP/**/dataset=EQ/*.parquet",
     "cnes_lt": "fonte=CNES/uf=SP/**/dataset=LT/*.parquet",
@@ -20,9 +25,8 @@ VIEWS = {
     "cnes_sr": "fonte=CNES/uf=SP/**/dataset=SR/*.parquet",
     "cnes_st": "fonte=CNES/uf=SP/**/dataset=ST/*.parquet",
     "sia": "fonte=SIA/uf=SP/**/dataset=PA/*.parquet",
-    # "sih": "fonte=SIH/uf=SP/**/dataset=???/*.parquet",   # ajustar quando baixar
-    # "sidra": "fonte=SIDRA/**/*.parquet",                  # ajustar quando baixar
-    # "ibge_pop": "fonte=IBGE/**/*.parquet",                # ajustar quando baixar
+    "sih": "fonte=SIH/uf=SP/**/dataset=RD/*.parquet",
+    "ibge_pop": "fonte=IBGE_SIDRA/uf=SP/**/*.parquet",
 }
 
 
@@ -38,7 +42,9 @@ def conectar_datasus(data_raw: Path | None = None) -> duckdb.DuckDBPyConnection:
         full_pattern = str(root / pattern)
         matches = list(root.glob(pattern))
         if not matches:
-            print(f"[conectar_datasus] Aviso: nenhum parquet para '{view_name}' em {full_pattern} — pulando.")
+            print(
+                f"[conectar_datasus] Aviso: nenhum parquet para '{view_name}' em {full_pattern} — pulando."
+            )
             continue
 
         con.execute(f"""
