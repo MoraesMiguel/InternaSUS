@@ -7,13 +7,14 @@ from internasus.config import (
     ANO_FIM,
     ANO_INICIO,
     CNES_GRUPOS,
+    EXTERNAL_DATA_DIR,
     RAW_DATA_DIR,
     SIA_GRUPOS,
     SIDRA_TABELAS,
     SIH_GRUPOS,
     UF_ALVO,
 )
-from internasus.ingestion import datasus, sidra
+from internasus.ingestion import cid10, datasus, sidra
 
 app = typer.Typer()
 
@@ -68,13 +69,20 @@ def ingest_sidra(
     _finalizar(resultado)
 
 
+@app.command("ingest-cid10")
+def ingest_cid10(forcar: bool = False) -> None:
+    """Extrai a tabela oficial CID-10 (referência estática) para data/external/cid10/."""
+    resultado = cid10.baixar_cid10(EXTERNAL_DATA_DIR, forcar=forcar)
+    _finalizar(resultado)
+
+
 @app.command("ingest-all")
 def ingest_all(
     ano_inicio: int = ANO_INICIO,
     ano_fim: int = ANO_FIM,
     uf: str = UF_ALVO,
 ) -> None:
-    """Executa toda a ingestão: CNES, SIA, SIH e SIDRA, em sequência."""
+    """Executa toda a ingestão: CNES, SIA, SIH, SIDRA e CID-10, em sequência."""
     agregado = {"baixados": 0, "pulados": 0, "falhas": []}
 
     for nome, fn in [
@@ -82,6 +90,7 @@ def ingest_all(
         ("SIA", lambda: datasus.baixar_sia(uf, ano_inicio, ano_fim, SIA_GRUPOS, RAW_DATA_DIR)),
         ("SIH", lambda: datasus.baixar_sih(uf, ano_inicio, ano_fim, SIH_GRUPOS, RAW_DATA_DIR)),
         ("SIDRA", lambda: sidra.baixar_sidra(SIDRA_TABELAS, ano_inicio, ano_fim, RAW_DATA_DIR)),
+        ("CID-10", lambda: cid10.baixar_cid10(EXTERNAL_DATA_DIR)),
     ]:
         logger.info(f"=== Ingestão: {nome} ===")
         parcial = fn()
