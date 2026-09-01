@@ -98,6 +98,20 @@ piores_long = piores.melt(
 )
 st.bar_chart(piores_long, x="nome_mun", y="valor", color="indicador", horizontal=True, stack=False)
 
+st.markdown("""
+**Como ler este gráfico**
+
+- 🔵 **Leitos/mil hab. ausentes não é erro** — municípios sem barra azul-clara possuem **zero leitos**, o dado mais crítico do grupo.
+- 📊 **Valores brutos, não scores** — cada indicador aparece em seu valor real, deixando visível *onde* está o problema, não apenas *quão grave* ele é.
+- ⚠️ **Perfis diferentes, causas diferentes:**
+  - Cidades como **Ocauçu** e **Coroados** têm poucos equipamentos, mas médicos relativamente presentes — gargalo físico.
+  - Cidades como **Pedra Bela** e **Lupércio** têm equipamentos em quantidade, mas faltam médicos — gargalo de pessoal.
+  - Demais municípios apresentam carência equilibrada nos três indicadores.
+- 🎯 **Seleção por média de percentis** — um município entra na lista por ser ruim na combinação dos três fatores, não necessariamente péssimo em todos. Isso explica perfis tão distintos num mesmo ranking.
+
+> O objetivo é orientar **políticas direcionadas**: saber se falta estrutura, profissional ou ambos é o primeiro passo para um investimento eficiente.
+""")
+
 st.divider()
 
 # Código do João: Panorama por tema[cite: 27]
