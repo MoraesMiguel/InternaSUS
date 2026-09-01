@@ -24,6 +24,7 @@ dependencies = [
     "oci>=2.185.0",
     "pandas>=2.3.3",
     "pip",
+    "plotly>=7.0.0",
     "polars>=1.44.1",
     "pyarrow>=25.0.1",
     "pysus>=2.10.5",
