@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -43,15 +45,44 @@ st.caption(
     "precisar ler uma tabela linha a linha pra achar o gargalo."
 )
 top_exames_mun = df.dropna(subset=["exames_por_mil_hab"]).nlargest(15, "exames_por_mil_hab")
-st.bar_chart(
-    top_exames_mun,
-    x="nome_mun",
-    y="exames_por_mil_hab",
+
+# Definir paleta de cores customizada
+cor_mapa = {
+    "Sem equipamento próprio (gargalo)": "#EF553B",      # Vermelho
+    "Equipamento ocioso": "#FFA15A",                      # Laranja/Amarelo
+    "Com produção e equipamento adequado": "#00CC96",     # Verde
+}
+
+# Se houver valores não previstos, adicionar cor padrão
+for status in top_exames_mun["situacao_exames"].dropna().unique():
+    if status not in cor_mapa:
+        cor_mapa[status] = "#636EFA"  # Azul padrão
+
+fig1 = px.bar(
+    top_exames_mun.sort_values("exames_por_mil_hab", ascending=True),
+    y="nome_mun",
+    x="exames_por_mil_hab",
     color="situacao_exames",
-    x_label="Município",
-    y_label="Exames realizados / mil hab.",
-    sort="-exames_por_mil_hab",
+    color_discrete_map=cor_mapa,
+    labels={
+        "exames_por_mil_hab": "Exames realizados / mil hab.",
+        "nome_mun": "Município",
+        "situacao_exames": "Situação"
+    },
+    orientation="h",
+    height=600,
 )
+
+fig1.update_layout(
+    xaxis_title="Exames realizados / mil hab.",
+    yaxis_title="Município",
+    legend_title="Situação",
+    hovermode="closest",
+    font=dict(size=11),
+    template="plotly_white",
+)
+
+st.plotly_chart(fig1, use_container_width=True)
 
 st.markdown("""
 #### 💡 Como interpretar este gráfico:
@@ -93,7 +124,30 @@ top_exames = (
     .dropna(subset=["exames_por_equipamento"])
     .head(15)
 )
-st.bar_chart(top_exames.set_index("nome_mun")["exames_por_equipamento"])
+
+fig2 = px.bar(
+    top_exames.sort_values("exames_por_equipamento", ascending=True),
+    y="nome_mun",
+    x="exames_por_equipamento",
+    color_discrete_sequence=["#EF553B"],  # Vermelho para indicar alerta
+    labels={
+        "exames_por_equipamento": "Exames / Equipamento",
+        "nome_mun": "Município",
+    },
+    orientation="h",
+    height=600,
+)
+
+fig2.update_layout(
+    xaxis_title="Exames por equipamento / ano",
+    yaxis_title="Município",
+    hovermode="closest",
+    font=dict(size=11),
+    template="plotly_white",
+    showlegend=False,
+)
+
+st.plotly_chart(fig2, use_container_width=True)
 
 st.markdown("""
 #### 💡 Como interpretar:
@@ -119,7 +173,30 @@ bottom_exames = (
     .dropna(subset=["exames_por_equipamento"])
     .head(15)
 )
-st.bar_chart(bottom_exames.set_index("nome_mun")["exames_por_equipamento"])
+
+fig3 = px.bar(
+    bottom_exames.sort_values("exames_por_equipamento", ascending=True),
+    y="nome_mun",
+    x="exames_por_equipamento",
+    color_discrete_sequence=["#FFA15A"],  # Laranja para alerta moderado
+    labels={
+        "exames_por_equipamento": "Exames / Equipamento",
+        "nome_mun": "Município",
+    },
+    orientation="h",
+    height=600,
+)
+
+fig3.update_layout(
+    xaxis_title="Exames por equipamento / ano",
+    yaxis_title="Município",
+    hovermode="closest",
+    font=dict(size=11),
+    template="plotly_white",
+    showlegend=False,
+)
+
+st.plotly_chart(fig3, use_container_width=True)
 
 st.markdown("""
 #### 💡 Como interpretar:
@@ -144,8 +221,9 @@ Se a demanda é realmente baixa, considere realocação ou compartilhamento regi
 st.divider()
 
 # ============================================================================
-# Continuação: Taxa de ocupação e leitos
+# CORREÇÃO: Gráfico 4 - Taxa de Ocupação (versão corrigida)
 # ============================================================================
+
 st.subheader("Top 15 municípios por taxa de ocupação estimada de leitos cirúrgicos")
 st.caption(
     "Municípios com menos de 3 leitos cirúrgicos cadastrados são excluídos deste "
@@ -157,14 +235,55 @@ top_leitos = (
     .dropna(subset=["taxa_ocupacao_leitos_pct"])
     .head(15)
 )
-st.bar_chart(top_leitos.set_index("nome_mun")["taxa_ocupacao_leitos_pct"])
+
+# Criar coluna com CATEGORIA (não com código de cor)
+def categoria_ocupacao(taxa):
+    if taxa >= 85:
+        return "Crítico (≥85%)"
+    elif taxa >= 70:
+        return "Saudável (70-85%)"
+    else:
+        return "Ocioso (<70%)"
+
+top_leitos_copy = top_leitos.copy()
+top_leitos_copy["categoria"] = top_leitos_copy["taxa_ocupacao_leitos_pct"].apply(categoria_ocupacao)
+
+# Plotly vai usar essa categoria para as cores
+fig4 = px.bar(
+    top_leitos_copy.sort_values("taxa_ocupacao_leitos_pct", ascending=True),
+    y="nome_mun",
+    x="taxa_ocupacao_leitos_pct",
+    color="categoria",  # ← Agora usa a CATEGORIA (texto: "Crítico", "Saudável", "Ocioso")
+    color_discrete_map={
+        "Crítico (≥85%)": "#EF553B",      # Vermelho
+        "Saudável (70-85%)": "#00CC96",   # Verde
+        "Ocioso (<70%)": "#FFA15A",       # Laranja
+    },
+    labels={
+        "taxa_ocupacao_leitos_pct": "Taxa de Ocupação (%)",
+        "nome_mun": "Município",
+        "categoria": "Nível de Ocupação"
+    },
+    orientation="h",
+    height=600,
+)
+
+fig4.update_layout(
+    xaxis_title="Taxa de Ocupação (%)",
+    yaxis_title="Município",
+    hovermode="closest",
+    font=dict(size=11),
+    template="plotly_white",
+)
+
+st.plotly_chart(fig4, use_container_width=True)
 
 st.markdown("""
 #### 💡 Como interpretar:
 
-- **Acima de 85%**: pressão alta — há fila de espera para cirurgias eletivas
-- **Entre 70-85%**: ocupação saudável — há margem para emergências
-- **Abaixo de 70%**: capacidade disponível — leitos podem estar ociosos
+- **Acima de 85%** (🔴 Vermelho): pressão alta — há fila de espera para cirurgias eletivas
+- **Entre 70-85%** (🟢 Verde): ocupação saudável — há margem para emergências
+- **Abaixo de 70%** (🟡 Laranja): capacidade disponível — leitos podem estar ociosos
 
 #### ⚠️ Limitação importante:
 
@@ -190,13 +309,31 @@ leitos_tipo = leitos_tipo[leitos_tipo["cod_mun"].isin(piores_leitos_mun)]
 leitos_tipo_agg = (
     leitos_tipo.groupby(["nome_mun", "tipo_leito_desc"])["qtd_leitos_existentes"].sum().reset_index()
 )
-st.bar_chart(
-    leitos_tipo_agg,
+
+fig5 = px.bar(
+    leitos_tipo_agg.sort_values("nome_mun"),
     x="nome_mun",
     y="qtd_leitos_existentes",
     color="tipo_leito_desc",
-    sort="-qtd_leitos_existentes",
+    barmode="stack",
+    labels={
+        "nome_mun": "Município",
+        "qtd_leitos_existentes": "Quantidade de Leitos",
+        "tipo_leito_desc": "Tipo de Leito"
+    },
+    height=600,
 )
+
+fig5.update_layout(
+    xaxis_title="Município",
+    yaxis_title="Quantidade de Leitos",
+    hovermode="closest",
+    font=dict(size=11),
+    template="plotly_white",
+    xaxis_tickangle=-45,
+)
+
+st.plotly_chart(fig5, use_container_width=True)
 
 st.markdown("""
 #### 💡 Como interpretar:
@@ -241,13 +378,30 @@ st.caption(
     "`producao_ambulatorial` vem do campo `PA_UFMUN` do SIA, que nesta base só tem cobertura "
     f"para alguns municípios de SP — por isso o ranking abaixo tem só {len(top_intensidade)} município(s) com dados."
 )
-st.bar_chart(
-    top_intensidade,
-    x="nome_mun",
-    y="producao_por_servico",
-    horizontal=True,
-    sort="-producao_por_servico",
+
+fig6 = px.bar(
+    top_intensidade.sort_values("producao_por_servico", ascending=True),
+    y="nome_mun",
+    x="producao_por_servico",
+    color_discrete_sequence=["#00CC96"],  # Verde para serviços produtivos
+    labels={
+        "producao_por_servico": "Produção por Serviço",
+        "nome_mun": "Município",
+    },
+    orientation="h",
+    height=600,
 )
+
+fig6.update_layout(
+    xaxis_title="Produção média / Serviço especializado",
+    yaxis_title="Município",
+    hovermode="closest",
+    font=dict(size=11),
+    template="plotly_white",
+    showlegend=False,
+)
+
+st.plotly_chart(fig6, use_container_width=True)
 
 st.markdown("""
 #### 💡 Como interpretar:
@@ -262,7 +416,7 @@ st.markdown("""
 2. Um serviço novo pode estar com produção baixa legitimamente (curva de crescimento)
 3. Falta de dado não significa "zero produção" — pode ser simplesmente não registrado
 
-#### 🎯 Ação Recomendada:
+#### 🎯 O Que Fazer?
 
 1. **Auditoria de serviços**: listar os cadastrados e confirmar quais estão realmente operacionais
 2. **Investigação de barreiras**: se funcionam mas produzem pouco:

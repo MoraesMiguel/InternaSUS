@@ -383,7 +383,8 @@ def gold_fato_filas_gargalos(con: duckdb.DuckDBPyConnection, data_ref: date) -> 
                 SUM(i.volume_internacoes) AS cirurgias_realizadas,
                 CASE
                     WHEN SUM(l.qtd) < 3 THEN NULL
-                    ELSE LEAST(ROUND((SUM(i.total_dias_permanencia) / NULLIF(SUM(l.qtd), 0) / 365.0) * 100, 2), 100.0)
+                    WHEN (SUM(i.total_dias_permanencia) / NULLIF(SUM(l.qtd), 0) / 365.0) * 100 > 150 THEN NULL
+                    ELSE ROUND((SUM(i.total_dias_permanencia) / NULLIF(SUM(l.qtd), 0) / 365.0) * 100, 2)
                 END AS taxa_ocupacao_leitos_pct
             FROM leitos_cirurgicos l
             LEFT JOIN internacoes_cirurgicas i ON l.CNES = i.CNES
