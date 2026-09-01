@@ -1,5 +1,7 @@
 # Data
-/data/
+data/raw/
+data/silver/
+data/external/
 
 # Cache local do pysus (definido em internasus/config.py via PYSUS_CACHEPATH)
 /.pysus_cache/
