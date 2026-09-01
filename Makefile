@@ -83,6 +83,11 @@ ingest-sih:
 ingest-sidra:
 	$(PYTHON_INTERPRETER) -m internasus.dataset ingest-sidra
 
+## Baixa a tabela oficial CID-10 (referencia estatica) para data/external/
+.PHONY: ingest-cid10
+ingest-cid10:
+	$(PYTHON_INTERPRETER) -m internasus.dataset ingest-cid10
+
 ## Gera a camada Silver a partir de data/raw/
 .PHONY: silver
 silver:

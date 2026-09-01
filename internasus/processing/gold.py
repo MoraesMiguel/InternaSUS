@@ -6,6 +6,9 @@ gravando cada tabela em data/gold/<nome>.parquet.
 
 Schema:
   dim_municipio                  -- 1 linha por município de SP (cod_mun, nome, população)
+  dim_estabelecimento            -- 1 linha por CNES (cadastro: natureza, esfera, tipo de unidade etc.)
+  dim_leito                      -- 1 linha por (tp_leito, codleito) — tipo e especialidade do leito
+  dim_diagnostico                -- 1 linha por código CID-10 (categoria/grupo/capítulo), de data/external/cid10/
   fato_filas_gargalos            -- grão município (README §2.1)
   fato_desigualdade_regional     -- grão município (README §2.2)
   fato_profissionais             -- grão município (README §2.4)
@@ -13,6 +16,8 @@ Schema:
   fato_recursos_estabelecimento  -- grão estabelecimento/CNES: profissionais + leitos + equipamentos +
                                      serviços especializados, todos, e per capita em cima da população
                                      do município onde o estabelecimento fica
+  fato_leitos_estabelecimento    -- grão estabelecimento/CNES x tipo de leito x especialidade do leito
+  fato_internacoes_diagnostico   -- grão município x diagnóstico principal (CID-10)
 
 Todas as tabelas fato têm uma coluna `data_referencia` (DATE) — o grão
 temporal deste MVP é um único ponto no tempo por tabela (última competência
@@ -34,7 +39,8 @@ from datetime import date
 
 import duckdb
 
-from internasus.config import GOLD_DATA_DIR, SILVER_DATA_DIR
+from internasus.config import EXTERNAL_DATA_DIR, GOLD_DATA_DIR, SILVER_DATA_DIR
+from internasus.domain import cnes_dominios
 
 
 def conectar_silver() -> duckdb.DuckDBPyConnection:
@@ -104,6 +110,244 @@ def gold_dim_municipio(con: duckdb.DuckDBPyConnection) -> None:
     """Dimensão conformada: 1 linha por município de SP."""
     df = con.execute("SELECT * FROM dim_municipio").df()
     _salvar(df, "dim_municipio")
+
+
+def gold_dim_estabelecimento(con: duckdb.DuckDBPyConnection) -> None:
+    """Dimensão: 1 linha por CNES, com os atributos de cadastro que se repetem
+    nas 4 fontes CNES (EQ/LT/PF/SR) — natureza jurídica, esfera administrativa,
+    tipo de gestão, tipo de unidade, região de saúde etc. Dá para segmentar
+    `fato_recursos_estabelecimento`/`fato_infra_estabelecimento` por esses atributos
+    em vez de só por município.
+
+    Um mesmo CNES aparece em mais de uma das 4 fontes com o mesmo cadastro, mas
+    nem toda fonte preenche todo campo (ex.: REGSAUDE vem em branco em ~metade
+    das linhas de uma fonte isolada) — por isso agregamos por CNES pegando
+    qualquer valor não-vazio disponível entre as 4, em vez de fixar uma fonte
+    "preferida" (que descartaria valor bom só por não ser da fonte prioritária).
+
+    Ficam de fora: MICR_REG (microrregião — campo do CNES já identificado como
+    descontinuado/não confiável, ver docs/docs/Resumo_Evolucao.md) e os campos
+    que vieram 100% em branco nesta base (DISTRADM, NATUREZA, NIV_HIER, TERCEIRO).
+
+    Além do código bruto, cada campo de domínio ganha uma coluna `*_desc` com a
+    descrição (ver internasus/domain/cnes_dominios.py — inclui o achado de que
+    `esfera_administrativa` vem, nesta base, idêntica a `tipo_gestao`)."""
+    tabelas = con.execute("SHOW TABLES").df()["name"].tolist()
+    se_atual = {"cnes_eq_atual", "cnes_lt_atual", "cnes_pf_atual", "cnes_sr_atual"}
+    if not se_atual <= set(tabelas):
+        print("[gold_dim_estabelecimento] Faltam views CNES '_atual' — pulando.")
+        return
+
+    colunas_comuns = (
+        "CNES, CODUFMUN, REGSAUDE, DISTRSAN, TPGESTAO, PF_PJ, NIV_DEP, "
+        "ESFERA_A, CLIENTEL, TP_UNID, TURNO_AT, NAT_JUR"
+    )
+    df = con.execute(f"""
+        WITH base AS (
+            SELECT {colunas_comuns} FROM cnes_eq_atual
+            UNION ALL
+            SELECT {colunas_comuns} FROM cnes_lt_atual
+            UNION ALL
+            SELECT {colunas_comuns} FROM cnes_pf_atual
+            UNION ALL
+            SELECT {colunas_comuns} FROM cnes_sr_atual
+        )
+        SELECT
+            CNES AS cnes,
+            MAX(NULLIF(TRIM(CODUFMUN), '')) AS cod_mun,
+            MAX(NULLIF(TRIM(REGSAUDE), '')) AS cod_regiao_saude,
+            MAX(NULLIF(TRIM(DISTRSAN), '')) AS cod_distrito_sanitario,
+            MAX(NULLIF(TRIM(TPGESTAO), '')) AS tipo_gestao,
+            MAX(NULLIF(TRIM(PF_PJ), '')) AS pessoa_fisica_juridica,
+            MAX(NULLIF(TRIM(NIV_DEP), '')) AS nivel_dependencia,
+            MAX(NULLIF(TRIM(ESFERA_A), '')) AS esfera_administrativa,
+            MAX(NULLIF(TRIM(CLIENTEL), '')) AS clientela,
+            MAX(NULLIF(TRIM(TP_UNID), '')) AS tipo_unidade,
+            MAX(NULLIF(TRIM(TURNO_AT), '')) AS turno_atendimento,
+            MAX(NULLIF(TRIM(NAT_JUR), '')) AS natureza_juridica
+        FROM base
+        GROUP BY CNES
+    """).df()
+
+    df["tipo_gestao_desc"] = cnes_dominios.decodificar(df, "tipo_gestao", cnes_dominios.GESTAO)
+    df["esfera_administrativa_desc"] = cnes_dominios.decodificar(
+        df, "esfera_administrativa", cnes_dominios.GESTAO
+    )
+    df["nivel_dependencia_desc"] = cnes_dominios.decodificar(
+        df, "nivel_dependencia", cnes_dominios.NIVEL_DEPENDENCIA
+    )
+    df["clientela_desc"] = cnes_dominios.decodificar(df, "clientela", cnes_dominios.CLIENTELA)
+    df["tipo_unidade_desc"] = cnes_dominios.decodificar(df, "tipo_unidade", cnes_dominios.TIPO_UNIDADE)
+    df["turno_atendimento_desc"] = cnes_dominios.decodificar(
+        df, "turno_atendimento", cnes_dominios.TURNO_ATENDIMENTO
+    )
+    df["natureza_juridica_desc"] = cnes_dominios.decodificar(
+        df, "natureza_juridica", cnes_dominios.NATUREZA_JURIDICA
+    )
+
+    _salvar(df, "dim_estabelecimento")
+
+
+def gold_dim_leito(con: duckdb.DuckDBPyConnection) -> None:
+    """Dimensão: 1 linha por (TP_LEITO, CODLEITO) — tipo e especialidade do
+    leito — com descrição. Grão pequeno (tabela de domínio), não por
+    estabelecimento; junta com `fato_leitos_estabelecimento` via
+    (tp_leito, codleito).
+
+    Nenhum TP_LEITO representa "emergencial"/"urgência" — isso é caráter da
+    internação (SIH.CAR_INT), não tipo de leito; ver docstring de
+    `internasus.domain.cnes_dominios.TIPO_LEITO`."""
+    tabelas = con.execute("SHOW TABLES").df()["name"].tolist()
+    if "cnes_lt_atual" not in tabelas:
+        print("[gold_dim_leito] Falta view 'cnes_lt_atual' — pulando.")
+        return
+
+    df = con.execute("""
+        SELECT DISTINCT
+            TRIM(TP_LEITO) AS tp_leito,
+            TRIM(CODLEITO) AS codleito
+        FROM cnes_lt_atual
+        WHERE TRIM(TP_LEITO) != '' AND TRIM(CODLEITO) != ''
+    """).df()
+
+    df["tipo_leito_desc"] = cnes_dominios.decodificar(df, "tp_leito", cnes_dominios.TIPO_LEITO)
+    df["codigo_leito_desc"] = cnes_dominios.decodificar(df, "codleito", cnes_dominios.CODIGO_LEITO)
+
+    _salvar(df, "dim_leito")
+
+
+def gold_fato_leitos_estabelecimento(con: duckdb.DuckDBPyConnection, data_ref: date) -> None:
+    """Grão estabelecimento (CNES) x tipo de leito x especialidade do leito.
+    Quebra os leitos por tipo/especialidade em vez do total agregado usado em
+    `fato_filas_gargalos` (que só filtra TP_LEITO='1', cirúrgico) — dá pra
+    cruzar com `dim_leito` para responder a pergunta de negócio sobre
+    ocupação de leitos por tipo de procedimento (cirúrgico, obstétrico, UTI
+    etc.) por município ou estabelecimento."""
+    tabelas = con.execute("SHOW TABLES").df()["name"].tolist()
+    if "cnes_lt_atual" not in tabelas:
+        print("[gold_fato_leitos_estabelecimento] Falta view 'cnes_lt_atual' — pulando.")
+        return
+
+    df = con.execute(f"""
+        SELECT
+            CNES AS cnes,
+            CODUFMUN AS cod_mun,
+            TRIM(TP_LEITO) AS tp_leito,
+            TRIM(CODLEITO) AS codleito,
+            DATE '{data_ref.isoformat()}' AS data_referencia,
+            SUM(TRY_CAST(QT_EXIST AS INTEGER)) AS qtd_leitos_existentes,
+            SUM(TRY_CAST(QT_CONTR AS INTEGER)) AS qtd_leitos_contratados,
+            SUM(TRY_CAST(QT_SUS AS INTEGER)) AS qtd_leitos_sus,
+            SUM(TRY_CAST(QT_NSUS AS INTEGER)) AS qtd_leitos_nao_sus
+        FROM cnes_lt_atual
+        WHERE TRIM(TP_LEITO) != '' AND TRIM(CODLEITO) != ''
+        GROUP BY CNES, CODUFMUN, TRIM(TP_LEITO), TRIM(CODLEITO)
+    """).df()
+    _salvar(df, "fato_leitos_estabelecimento")
+
+
+def gold_dim_diagnostico(con: duckdb.DuckDBPyConnection) -> None:
+    """Dimensão: 1 linha por código CID-10 (subcategoria de 4 caracteres ou
+    categoria de 3, no formato usado por `SIH.DIAG_PRINC` — sem ponto, ex.
+    'O800'), com a hierarquia completa (categoria/grupo/capítulo).
+
+    Fonte: tabelas oficiais CID-10 do DATASUS (capítulos/grupos/categorias/
+    subcategorias), obtidas via data/external/cid10/ (ver README de origem —
+    mesmas 4 tabelas publicadas em datasus.saude.gov.br). Não geradas pela
+    Silver porque não vêm de data/raw — são referência estática, por isso
+    ficam em data/external/, não data/silver/.
+
+    Cobertura validada contra os DIAG_PRINC reais do nosso SIH: 99,9%
+    (8.713 de 8.722 códigos distintos) juntando primeiro por subcategoria (4
+    caracteres) e, pro que sobrar, por categoria (3 caracteres — registros
+    sem o dígito de subcategoria). Os 9 códigos sem tradução (`U09`, `U10`,
+    `U109`, `N182`-`N185`, `C824`, `C826`) são revisões mais novas da CID-10
+    (ex. condições pós-COVID-19) que não estão nesta tabela — ficam None."""
+    caminho = EXTERNAL_DATA_DIR / "cid10"
+    if not (caminho / "subcategorias.csv").exists():
+        print(f"[gold_dim_diagnostico] Tabelas CID-10 não encontradas em {caminho} — pulando.")
+        return
+
+    for nome in ["capitulos", "grupos", "categorias", "subcategorias"]:
+        con.execute(f"""
+            CREATE OR REPLACE VIEW cid_{nome} AS
+            SELECT * FROM read_csv('{(caminho / f"{nome}.csv").as_posix()}', header=true, all_varchar=true)
+        """)
+
+    df = con.execute("""
+        WITH codigos AS (
+            SELECT SUBCAT AS codigo, DESCRICAO AS descricao, SUBSTR(SUBCAT, 1, 3) AS cod_categoria
+            FROM cid_subcategorias
+            UNION
+            SELECT CAT AS codigo, DESCRICAO AS descricao, CAT AS cod_categoria
+            FROM cid_categorias
+        ),
+        -- CID-10-GRUPOS.CSV tem faixas aninhadas (um grupo amplo e sub-grupos
+        -- dentro dele cobrem a mesma categoria) — sem isso o BETWEEN faz
+        -- fan-out (1 categoria -> várias linhas de grupo). Fica só a faixa
+        -- mais estreita (mais específica) por categoria (aproximação numérica
+        -- da largura: letra*100 + 2 dígitos).
+        grupo_por_categoria AS (
+            SELECT
+                c.cod_categoria,
+                g.DESCRICAO AS descricao_grupo,
+                ROW_NUMBER() OVER (
+                    PARTITION BY c.cod_categoria
+                    ORDER BY
+                        (ascii(SUBSTR(g.CATFIM, 1, 1)) * 100 + TRY_CAST(SUBSTR(g.CATFIM, 2, 2) AS INTEGER))
+                        - (ascii(SUBSTR(g.CATINIC, 1, 1)) * 100 + TRY_CAST(SUBSTR(g.CATINIC, 2, 2) AS INTEGER))
+                ) AS rn
+            FROM (SELECT DISTINCT cod_categoria FROM codigos) c
+            JOIN cid_grupos g ON c.cod_categoria BETWEEN g.CATINIC AND g.CATFIM
+            QUALIFY rn = 1
+        )
+        SELECT
+            c.codigo,
+            c.descricao,
+            c.cod_categoria,
+            cat.DESCRICAO AS descricao_categoria,
+            gp.descricao_grupo,
+            cap.NUMCAP AS numero_capitulo,
+            cap.DESCRICAO AS descricao_capitulo
+        FROM codigos c
+        LEFT JOIN cid_categorias cat ON c.cod_categoria = cat.CAT
+        LEFT JOIN grupo_por_categoria gp ON c.cod_categoria = gp.cod_categoria
+        LEFT JOIN cid_capitulos cap ON c.cod_categoria BETWEEN cap.CATINIC AND cap.CATFIM
+    """).df()
+    _salvar(df, "dim_diagnostico")
+
+
+def gold_fato_internacoes_diagnostico(con: duckdb.DuckDBPyConnection, data_ref: date) -> None:
+    """Grão município x diagnóstico principal (CID-10). Principais causas de
+    internação por município — cruza com `dim_diagnostico` para agrupar por
+    categoria/grupo/capítulo (ex. "Doenças do aparelho circulatório").
+
+    `MUNIC_RES` (residência do paciente) inclui município de qualquer UF do
+    Brasil — pacientes de fora de SP internados em hospital de SP — enquanto
+    `dim_municipio` só tem os 645 municípios de SP (mesmo escopo das outras
+    fatos de grão município, que já ficam implicitamente restritas a SP por
+    serem construídas a partir de `dim_municipio`). Sem o INNER JOIN abaixo,
+    ~3,9% das internações (residentes de fora de SP) ficariam com `cod_mun`
+    órfão ao cruzar com `dim_municipio` no consumo (Power BI/Streamlit)."""
+    tabelas = con.execute("SHOW TABLES").df()["name"].tolist()
+    if "sih" not in tabelas:
+        print("[gold_fato_internacoes_diagnostico] Falta view 'sih' — pulando.")
+        return
+
+    df = con.execute(f"""
+        SELECT
+            s.MUNIC_RES AS cod_mun,
+            s.DIAG_PRINC AS diagnostico_principal,
+            DATE '{data_ref.isoformat()}' AS data_referencia,
+            COUNT(*) AS total_internacoes,
+            SUM(s.DIAS_PERM) AS dias_permanencia_total,
+            SUM(CASE WHEN s.DIAS_PERM > 0 THEN 1 ELSE 0 END) AS internacoes_com_permanencia
+        FROM sih s
+        INNER JOIN dim_municipio dm ON s.MUNIC_RES = dm.cod_mun
+        WHERE s.DIAG_PRINC IS NOT NULL AND TRIM(s.DIAG_PRINC) != ''
+        GROUP BY s.MUNIC_RES, s.DIAG_PRINC
+    """).df()
+    _salvar(df, "fato_internacoes_diagnostico")
 
 
 def gold_fato_filas_gargalos(con: duckdb.DuckDBPyConnection, data_ref: date) -> None:
@@ -368,11 +612,16 @@ def gerar_gold() -> None:
     )
 
     gold_dim_municipio(con)
+    gold_dim_estabelecimento(con)
+    gold_dim_leito(con)
+    gold_dim_diagnostico(con)
     gold_fato_filas_gargalos(con, data_ref)
     gold_fato_desigualdade_regional(con, data_ref)
     gold_fato_profissionais(con, data_ref)
     gold_fato_infra_estabelecimento(con, data_ref)
     gold_fato_recursos_estabelecimento(con, data_ref)
+    gold_fato_leitos_estabelecimento(con, data_ref)
+    gold_fato_internacoes_diagnostico(con, data_ref)
 
     print(
         "[gerar_gold] Bloco de Atenção Primária (perguntas de negócio §3) não gerado: "
