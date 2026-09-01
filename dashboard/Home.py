@@ -138,7 +138,7 @@ cards = [
     (
         "⏳ Gargalos",
         f"{gargalo_count} municípios",
-        "sem nenhum equipamento de imagem próprio, mesmo com demanda de exames.",
+        "Sem nenhum equipamento de imagem próprio, mesmo com demanda de exames.",
         "pages/1_Filas_e_Gargalos.py",
     ),
     (
@@ -150,31 +150,31 @@ cards = [
     (
         "🩺 Profissionais",
         f"{sem_medico} municípios",
-        "não têm nenhum médico cadastrado no CNES.",
+        "Sem nenhum médico",
         "pages/3_Profissionais.py",
     ),
     (
         "🏥 Atenção Primária",
         f"{aps['internacoes_icsap'].sum():,.0f}",
-        "internações no estado foram por condições sensíveis (evitáveis).",
+        "Internações no estado foram por condições sensíveis (evitáveis).",
         "pages/4_Atenção_Primaria.py", 
     ),
     (
         "🏨 Estabelecimentos",
         f"{pct_publico:.0f}%",
-        "dos estabelecimentos são de gestão pública (municipal/estadual).",
+        "Dos estabelecimentos são de gestão pública (municipal/estadual).",
         "pages/4_Estabelecimentos.py",
     ),
     (
         "🛏️ Leitos",
         f"{sem_uti} municípios",
-        "não têm nenhum leito complementar (UTI) cadastrado.",
+        "Não têm nenhum leito complementar (UTI) cadastrado.",
         "pages/5_Capacidade_Hospitalar.py",
     ),
     (
         "🧬 Diagnósticos",
         top_capitulo,
-        "é o capítulo CID-10 que mais interna gente no estado.",
+        "É o capítulo CID-10 que mais interna gente no estado.",
         "pages/6_Causas_de_Internacao.py",
     ),
 ]
