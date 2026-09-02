@@ -436,7 +436,7 @@ def gold_fato_desigualdade_regional(con: duckdb.DuckDBPyConnection, data_ref: da
                 COUNT(*) AS total_internacoes,
                 SUM(CASE WHEN MUNIC_RES != MUNIC_MOV THEN 1 ELSE 0 END) AS evasao,
                 ROUND(SUM(CASE WHEN MUNIC_RES != MUNIC_MOV THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS pct_evasao
-            FROM sih GROUP BY MUNIC_RES HAVING COUNT(*) > 100
+            FROM sih GROUP BY MUNIC_RES HAVING COUNT(*) > 1000
         ),
         polos AS (
             SELECT
